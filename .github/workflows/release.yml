@@ -112,6 +112,10 @@ jobs:
           PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
           PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
         run: |
+          echo "PULP_URL=[$PULP_URL]"
+          echo "PULP_USERNAME=[$PULP_USERNAME]"
+          echo "PULP_PASSWORD length=${#PULP_PASSWORD}"
+
           mkdir -p ~/.config/pulp
 
           cat > ~/.config/pulp/cli.toml <<EOF
@@ -124,6 +128,26 @@ jobs:
           verify_ssl = true
           format = "json"
           EOF
+
+          echo "Config written."
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path.home() / ".config/pulp/cli.toml"
+          print("Config exists:", p.exists())
+
+          for line in p.read_text().splitlines():
+              if line.startswith("password"):
+                  print("password = <redacted>")
+              else:
+                  print(line)
+          PY
+
+      - name: Test Pulp CLI
+        run: |
+          pulp --version
+          pulp rpm --help
 
       - name: Upload RPM to Pulp
         run: |
