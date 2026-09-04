@@ -108,7 +108,7 @@ jobs:
 
       - name: Configure Pulp CLI
         env:
-          PULP_URL: ${{ secrets.PULP_URL }}
+          PULP_URL: ${{ secrets.PULP_BASE_URL }}
           PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
           PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
         run: |
