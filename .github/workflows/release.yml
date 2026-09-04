@@ -94,12 +94,46 @@ jobs:
           find ~/rpmbuild/RPMS -type f -name "*.rpm" -print0 |
           while IFS= read -r -d '' rpm; do
             echo "Verifying: $rpm"
-            rpm --checksig -v "$rpm"
+            rpm --checksig "$rpm"
           done
 
       - name: Show generated RPM
         run: |
           find ~/rpmbuild/RPMS -type f -name "*.rpm" -print
+
+      - name: Install Pulp CLI
+        run: |
+          dnf install -y python3-pip
+          pip3 install pulp-cli pulp-cli-rpm
+
+      - name: Configure Pulp CLI
+        env:
+          PULP_URL: ${{ secrets.PULP_URL }}
+          PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+          PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+        run: |
+          mkdir -p ~/.config/pulp
+
+          cat > ~/.config/pulp/cli.toml <<EOF
+          [cli]
+          username = "$PULP_USERNAME"
+          password = "$PULP_PASSWORD"
+          base_url = "$PULP_URL"
+          api_root = "/pulp/"
+          domain = "default"
+          verify_ssl = true
+          format = "json"
+          EOF
+
+      - name: Upload RPM to Pulp
+        run: |
+          find ~/rpmbuild/RPMS -type f -name "*.rpm" -print0 |
+          while IFS= read -r -d '' rpm; do
+            echo "Uploading: $rpm"
+            pulp rpm content upload \
+              --file "$rpm" \
+              --repository demo-rpm-repo
+          done
 
       - name: Upload signed RPM artifact
         uses: actions/upload-artifact@v4
