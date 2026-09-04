@@ -1,116 +1,102 @@
 name: Build and Sign RPM
 
 on:
-  push:
-    tags:
-      - "v*"
+push:
+tags:
+- "v*"
 
 jobs:
-  build-rpm:
-    runs-on: ubuntu-latest
+build-rpm:
+runs-on: ubuntu-latest
 
-    container:
-      image: fedora:latest
+container:
+  image: fedora:latest
 
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+defaults:
+  run:
+    shell: bash
 
-      - name: Install RPM and GPG tools
-        run: |
-          dnf install -y rpm-build rpm-sign gnupg2
+steps:
+  - name: Checkout source
+    uses: actions/checkout@v4
 
-      - name: Get version from Git tag
-        id: version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+  - name: Install RPM and GPG tools
+    run: |
+      dnf install -y rpm-build rpm-sign gnupg2
 
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+  - name: Get version from Git tag
+    id: version
+    run: |
+      VERSION="${GITHUB_REF_NAME#v}"
 
-          echo "Git tag: $GITHUB_REF_NAME"
-          echo "RPM version: $VERSION"
+      echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Generate RPM spec
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
+      echo "Git tag: $GITHUB_REF_NAME"
+      echo "RPM version: $VERSION"
 
-          cat > hello.spec <<EOF
-          Name:           hello
-          Version:        ${VERSION}
-          Release:        1
-          Summary:        A simple hello world application
+  - name: Build RPM
+    run: |
+      VERSION="${{ steps.version.outputs.version }}"
 
-          License:        GPL
-          BuildArch:      noarch
+      mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
-          %description
-          A simple hello world application.
+      # Copy source and spec into the RPM build tree
+      cp hello.sh ~/rpmbuild/SOURCES/
+      cp hello.spec ~/rpmbuild/SPECS/
 
-          %install
-          mkdir -p %{buildroot}/usr/bin
-          install -m 755 hello.sh %{buildroot}/usr/bin/hello
+      # Replace the placeholder version with the Git tag version
+      sed -i "s/^Version:.*/Version:        ${VERSION}/" ~/rpmbuild/SPECS/hello.spec
 
-          %files
-          /usr/bin/hello
+      echo "RPM spec being used:"
+      cat ~/rpmbuild/SPECS/hello.spec
 
-          %changelog
-          * $(date "+%a %b %d %Y") CI <ci@example.com> - ${VERSION}-1
-          - Automated release ${VERSION}
-          EOF
+      # Build binary RPM only
+      rpmbuild -bb ~/rpmbuild/SPECS/hello.spec
 
-          echo "Generated RPM spec:"
-          cat hello.spec
+  - name: Import GPG signing key
+    env:
+      RPM_GPG_PRIVATE_KEY: ${{ secrets.RPM_GPG_PRIVATE_KEY }}
+    run: |
+      mkdir -p ~/.gnupg
+      chmod 700 ~/.gnupg
 
-      - name: Build RPM
-        run: |
-          mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+      printf '%s\n' "$RPM_GPG_PRIVATE_KEY" | gpg --batch --import
 
-          cp hello.spec ~/rpmbuild/SPECS/
+      echo "Imported GPG keys:"
+      gpg --list-secret-keys --keyid-format LONG
 
-          rpmbuild -bb ~/rpmbuild/SPECS/hello.spec
+  - name: Configure RPM signing
+    env:
+      RPM_GPG_NAME: ${{ secrets.RPM_GPG_NAME }}
+    run: |
+      echo "%_signature gpg" > ~/.rpmmacros
+      echo "%_gpg_name $RPM_GPG_NAME" >> ~/.rpmmacros
 
-      - name: Import GPG signing key
-        env:
-          RPM_GPG_PRIVATE_KEY: ${{ secrets.RPM_GPG_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.gnupg
-          chmod 700 ~/.gnupg
+      echo "RPM signing configuration:"
+      cat ~/.rpmmacros
 
-          printf '%s\n' "$RPM_GPG_PRIVATE_KEY" | gpg --batch --import
+  - name: Sign RPM
+    run: |
+      find ~/rpmbuild/RPMS -type f -name "*.rpm" -print0 |
+      while IFS= read -r -d '' rpm; do
+        echo "Signing: $rpm"
+        rpmsign --addsign "$rpm"
+      done
 
-          echo "Imported GPG keys:"
-          gpg --list-secret-keys --keyid-format LONG
+  - name: Verify RPM signature
+    run: |
+      find ~/rpmbuild/RPMS -type f -name "*.rpm" -print0 |
+      while IFS= read -r -d '' rpm; do
+        echo "Verifying: $rpm"
+        rpm --checksig "$rpm"
+      done
 
-      - name: Configure RPM signing
-        env:
-          RPM_GPG_NAME: ${{ secrets.RPM_GPG_NAME }}
-        run: |
-          echo "%_signature gpg" > ~/.rpmmacros
-          echo "%_gpg_name $RPM_GPG_NAME" >> ~/.rpmmacros
+  - name: Show generated RPM
+    run: |
+      find ~/rpmbuild/RPMS -type f -name "*.rpm" -print
 
-          echo "RPM signing configuration:"
-          cat ~/.rpmmacros
-
-      - name: Sign RPM
-        run: |
-          for rpm in ~/rpmbuild/RPMS/**/*.rpm; do
-            echo "Signing: $rpm"
-            rpmsign --addsign "$rpm"
-          done
-
-      - name: Verify RPM signature
-        run: |
-          for rpm in ~/rpmbuild/RPMS/**/*.rpm; do
-            echo "Verifying: $rpm"
-            rpm --checksig "$rpm"
-          done
-
-      - name: Show generated RPM
-        run: |
-          find ~/rpmbuild/RPMS -type f -name "*.rpm" -print
-
-      - name: Upload signed RPM artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: hello-rpm
-          path: /github/home/rpmbuild/RPMS/**/*.rpm
+  - name: Upload signed RPM artifact
+    uses: actions/upload-artifact@v4
+    with:
+      name: hello-rpm
+      path: /github/home/rpmbuild/RPMS/**/*.rpm
