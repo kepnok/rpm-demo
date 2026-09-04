@@ -104,7 +104,7 @@ jobs:
       - name: Install Pulp CLI
         run: |
           dnf install -y python3-pip
-          pip3 install pulp-cli==0.40.6 pulp-cli-rpm
+          pip3 install pulp-cli==0.40.6
 
       - name: Configure Pulp CLI
         env:
