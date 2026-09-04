@@ -62,6 +62,15 @@ jobs:
           echo "Imported GPG keys:"
           gpg --list-secret-keys --keyid-format LONG
 
+          echo "Exporting public key for RPM..."
+          gpg --armor --export > /tmp/rpm-signing-key.pub
+
+          echo "Importing public key into RPM..."
+          rpm --import /tmp/rpm-signing-key.pub
+
+          echo "RPM keys:"
+          rpm -qa 'gpg-pubkey*'
+
       - name: Configure RPM signing
         env:
           RPM_GPG_NAME: ${{ secrets.RPM_GPG_NAME }}
@@ -85,7 +94,7 @@ jobs:
           find ~/rpmbuild/RPMS -type f -name "*.rpm" -print0 |
           while IFS= read -r -d '' rpm; do
             echo "Verifying: $rpm"
-            rpm --checksig "$rpm"
+            rpm --checksig -v "$rpm"
           done
 
       - name: Show generated RPM
